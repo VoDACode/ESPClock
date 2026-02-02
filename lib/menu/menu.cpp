@@ -1,55 +1,9 @@
 #include "menu.h"
 
-MenuItem::MenuItem() : name(""), enable(true), parent(nullptr), action(nullptr), childCount(0), children(nullptr)
-{
-}
-
-MenuItem::MenuItem(String name)
-    : name(name), enable(true), parent(nullptr), action(nullptr), childCount(0), children(nullptr)
-{
-}
-
-MenuItem::MenuItem(String name, void (*action)(), bool enable)
-    : name(name), enable(enable), parent(nullptr), action(action), childCount(0), children(nullptr)
-{
-}
-
-MenuItem::~MenuItem()
-{
-    delete[] children;
-}
-
-void MenuItem::addChild(MenuItem *child)
-{
-    if (child == nullptr)
-        return;
-    MenuItem *newChildren = new MenuItem[childCount + 1];
-    for (size_t i = 0; i < childCount; i++)
-    {
-        newChildren[i] = children[i];
-    }
-    newChildren[childCount] = *child;
-    newChildren[childCount].parent = this;
-    delete[] children;
-    children = newChildren;
-    childCount++;
-}
-
-MenuItem *MenuItem::getChild(size_t index)
-{
-    if (index >= childCount || children == nullptr)
-    {
-        return nullptr;
-    }
-    return &children[index];
-}
-
-size_t MenuItem::getChildCount()
-{
-    return childCount;
-}
-
-Menu::Menu() : rootItem(nullptr), currentItem(nullptr), selectedChildIndex(0), scrollOffset(0)
+Menu::Menu(
+    int screenWidth,
+    int screenHeight) : rootItem(nullptr), currentItem(nullptr), selectedChildIndex(0), scrollOffset(0),
+                        screenWidth(screenWidth), screenHeight(screenHeight)
 {
 }
 
@@ -69,6 +23,35 @@ void Menu::setRootItem(MenuItem *root)
 MenuItem *Menu::getCurrentItem()
 {
     return currentItem;
+}
+
+void Menu::action(MenuAction action)
+{
+    if(currentItem != nullptr && currentItem->onAction(action))
+    {
+        return;
+    }
+    switch (action.type)
+    {
+    case MENU_ACTION_ROLL:
+        if (action.value > 0)
+        {
+            navigateDown();
+        }
+        else if (action.value < 0)
+        {
+            navigateUp();
+        }
+        break;
+    case MENU_ACTION_CLICK:
+        executeCurrentAction();
+        break;
+    case MENU_ACTION_BACK:
+        navigateToParent();
+        break;
+    default:
+        break;
+    }
 }
 
 void Menu::navigateToChild(size_t index)
@@ -98,11 +81,11 @@ void Menu::navigateUp()
 {
     if (currentItem == nullptr)
         return;
-    
+
     size_t childCount = currentItem->getChildCount();
     if (childCount == 0)
         return;
-    
+
     // Move selection up, skip disabled items
     size_t startIndex = selectedChildIndex;
     do
@@ -115,12 +98,11 @@ void Menu::navigateUp()
         {
             selectedChildIndex = childCount - 1; // Wrap around to bottom
         }
-        
+
         MenuItem *child = currentItem->getChild(selectedChildIndex);
         if (child != nullptr && child->enable)
         {
-            // Adjust scroll offset if needed
-            const size_t MAX_VISIBLE_ITEMS = 6; // Leave room for title
+            // Adjust scroll offset if selected item is above visible area
             if (selectedChildIndex < scrollOffset)
             {
                 scrollOffset = selectedChildIndex;
@@ -134,11 +116,11 @@ void Menu::navigateDown()
 {
     if (currentItem == nullptr)
         return;
-    
+
     size_t childCount = currentItem->getChildCount();
     if (childCount == 0)
         return;
-    
+
     // Move selection down, skip disabled items
     size_t startIndex = selectedChildIndex;
     do
@@ -151,15 +133,34 @@ void Menu::navigateDown()
         {
             selectedChildIndex = 0; // Wrap around to top
         }
-        
+
         MenuItem *child = currentItem->getChild(selectedChildIndex);
         if (child != nullptr && child->enable)
         {
-            // Adjust scroll offset if needed
-            const size_t MAX_VISIBLE_ITEMS = 6; // Leave room for title
-            if (selectedChildIndex >= scrollOffset + MAX_VISIBLE_ITEMS)
+            // Перевірити, чи вибраний елемент за межами видимої області
+            // Підрахувати висоту всіх елементів від scrollOffset до selectedChildIndex
+            int totalHeight = 16; // Висота заголовка
+            bool needScroll = false;
+            
+            for (size_t i = scrollOffset; i <= selectedChildIndex; i++)
             {
-                scrollOffset = selectedChildIndex - MAX_VISIBLE_ITEMS + 1;
+                MenuItem *item = currentItem->getChild(i);
+                if (item != nullptr)
+                {
+                    MenuItemSize itemSize = item->getSize();
+                    totalHeight += itemSize.height;
+                    
+                    if (totalHeight > screenHeight)
+                    {
+                        needScroll = true;
+                        break;
+                    }
+                }
+            }
+            
+            if (needScroll && scrollOffset < selectedChildIndex)
+            {
+                scrollOffset++;
             }
             break;
         }
@@ -171,18 +172,16 @@ void Menu::executeCurrentAction()
     if (currentItem == nullptr)
         return;
     size_t childCount = currentItem->getChildCount();
-    
+
     // If current item has children, navigate to selected child
     if (childCount > 0)
     {
         MenuItem *selectedChild = currentItem->getChild(selectedChildIndex);
         if (selectedChild != nullptr && selectedChild->enable)
         {
-            // Execute child's action if it has one
-            if (selectedChild->action != nullptr)
-            {
-                selectedChild->action();
-            }
+            // Execute child's onClick handler
+            selectedChild->onClick();
+            
             // Navigate into the child if it has children
             if (selectedChild->getChildCount() > 0)
             {
@@ -190,10 +189,10 @@ void Menu::executeCurrentAction()
             }
         }
     }
-    // If current item has no children, execute its action
-    else if (currentItem->action != nullptr)
+    // If current item has no children, execute its onClick handler
+    else
     {
-        currentItem->action();
+        currentItem->onClick();
     }
 }
 
@@ -208,13 +207,13 @@ void Menu::displayMenu(Adafruit_SSD1306 &display)
     display.setCursor(0, 0);
 
     // Display current item name (title)
-    display.println(currentItem->name);
+    display.println(currentItem->getName());
     display.println(""); // Blank line for separation
 
     // Calculate visible items (64 pixels high, 8 pixels per line, 2 lines for title)
     const size_t MAX_VISIBLE_ITEMS = 6;
     size_t childCount = currentItem->getChildCount();
-    
+
     if (childCount == 0)
     {
         display.println("  (no items)");
@@ -222,37 +221,65 @@ void Menu::displayMenu(Adafruit_SSD1306 &display)
     else
     {
         // Display visible child items based on scroll offset
-        size_t endIndex = scrollOffset + MAX_VISIBLE_ITEMS;
+        int currentY = 16; // Початкова позиція після заголовка
+        size_t visibleCount = 0;
+        size_t startRenderIndex = scrollOffset;
+        
+        // Знайти, скільки елементів поміститься на екран
+        for (size_t i = scrollOffset; i < childCount && currentY < screenHeight; i++)
+        {
+            MenuItem *child = currentItem->getChild(i);
+            if (child != nullptr)
+            {
+                MenuItemSize itemSize = child->getSize();
+                if (currentY + itemSize.height <= screenHeight)
+                {
+                    visibleCount++;
+                }
+            }
+        }
+        
+        size_t endIndex = scrollOffset + visibleCount;
         if (endIndex > childCount)
         {
             endIndex = childCount;
         }
         
+        currentY = 16; // Скинути для рендерингу
         for (size_t i = scrollOffset; i < endIndex; i++)
         {
             MenuItem *child = currentItem->getChild(i);
             if (child != nullptr)
             {
-                // Highlight selected item with inverse colors
-                if (i == selectedChildIndex)
+                MenuItemSize itemSize = child->getSize();
+                
+                // Перевірити, чи елемент поміститься
+                if (currentY + itemSize.height > screenHeight)
                 {
-                    display.setTextColor(SSD1306_BLACK, SSD1306_WHITE); // Inverted
-                    display.print(">");
-                }
-                else
-                {
-                    display.setTextColor(SSD1306_WHITE);
-                    display.print(" ");
+                    break;
                 }
                 
-                display.print(child->enable ? " " : "x ");
-                display.println(child->name);
+                int xPos = 0;
                 
-                // Reset colors
+                // Індикатор вибору
+                display.setCursor(xPos, currentY);
                 display.setTextColor(SSD1306_WHITE);
+                display.print(i == selectedChildIndex ? ">" : " ");
+                
+                // Індикатор стану (enabled/disabled)
+                xPos += 6;
+                display.setCursor(xPos, currentY);
+                display.print(child->enable ? " " : "x");
+                
+                // Рендер самого елемента через віртуальний метод
+                xPos += 12;
+                child->render(display, xPos, currentY, i == selectedChildIndex);
+                
+                // Перейти до наступної позиції з урахуванням висоти елемента
+                currentY += itemSize.height;
             }
         }
-        
+
         // Show scroll indicators
         if (scrollOffset > 0)
         {

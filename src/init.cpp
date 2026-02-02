@@ -257,30 +257,27 @@ void setupMenu()
 {
     Serial.println("Setting up menu...");
     
-    MenuItem *rootItem = new MenuItem("Main Menu");
-    rootItem->addChild(new MenuItem("Set Alarm Time", []()
+    MenuItemContainer *rootItem = new MenuItemContainer("Main Menu");
+    rootItem->addChild(new MenuItemText("Set Alarm Time", []()
     { 
         Serial.println("Set Alarm Time selected"); 
     }));
-    
-    rootItem->addChild(new MenuItem("Toggle Alarm", []()
-    { 
-        Serial.println("Toggle Alarm selected"); 
-    }));
+    bool* alarmEnabled = new bool(false);
+    rootItem->addChild(new MenuItemToggle("Toggle Alarm", alarmEnabled));
 
-    MenuItem *settingsItem = new MenuItem("Settings");
-    settingsItem->addChild(new MenuItem("Display Brightness", []()
+    MenuItemContainer *settingsItem = new MenuItemContainer("Settings");
+    settingsItem->addChild(new MenuItemText("Display Brightness", []()
     { 
         Serial.println("Display Brightness selected"); 
     }));
     
-    settingsItem->addChild(new MenuItem("Timezone Offset", []()
+    settingsItem->addChild(new MenuItemText("Timezone Offset", []()
     { 
         Serial.println("Timezone Offset selected"); 
     }));
     
     rootItem->addChild(settingsItem);
-    rootItem->addChild(new MenuItem("Exit Menu", []()
+    rootItem->addChild(new MenuItemText("Exit Menu", []()
     { 
         Serial.println("Exit Menu selected"); 
         inMenu = false; 

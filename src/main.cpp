@@ -241,11 +241,11 @@ void loop()
 
       if (diff > 0)
       {
-        mainMenu.navigateUp();
+        mainMenu.action(MenuAction(MENU_ACTION_ROLL, -1));
       }
       else if (diff < 0)
       {
-        mainMenu.navigateDown();
+        mainMenu.action(MenuAction(MENU_ACTION_ROLL, 1));
       }
     }
 
@@ -254,13 +254,13 @@ void loop()
     if (encoderButton.wasClickedNTimes(2, 500))
     {
       Serial.println("Double click detected - navigating to parent");
-      mainMenu.navigateToParent();
+      mainMenu.action(MenuAction(MENU_ACTION_BACK));
     }
     // Одинарний клік - виконання дії
     else if (encoderButton.wasClickedNTimes(1, 500))
     {
       Serial.println("Single click detected - executing action");
-      mainMenu.executeCurrentAction();
+      mainMenu.action(MenuAction(MENU_ACTION_CLICK));
     }
     // Якщо більше 2 кліків - просто скидаємо (ігноруємо)
     else
@@ -316,7 +316,6 @@ void loop()
     display.fillRect(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, SSD1306_BLACK);
     syncStatus->visible = haiot.isWiFiConnected() && timeInitialized;
     wifiStatus->visible = haiot.isWiFiConnected();
-    Serial.println("Updating status bar: SyncVisible=" + String(syncStatus->visible) + ", WifiVisible=" + String(wifiStatus->visible));
     drawClock();
     statusBar.draw();
     display.display();
